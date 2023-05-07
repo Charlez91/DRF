@@ -15,6 +15,7 @@ class ContactAPIView(views.APIView):
     for creating contact entries
     '''
     serializer_class = ContactSerializer
+    
     def get_serializer_context(self):
         return {
             'request':self.request,

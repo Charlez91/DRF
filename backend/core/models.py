@@ -13,8 +13,10 @@ class Contact(
     ActivatorModel,
     TitleDescriptionModel,
     Model):
-    '''contact model for the contact details of 
-        user and message sent via the api'''
+    '''
+    Contact model for the contact details of 
+    user and message sent via the api
+    '''
     email = models.EmailField(verbose_name='Email')
 
     def __str__(self) -> str:
@@ -22,4 +24,3 @@ class Contact(
 
     class Meta:
         verbose_name_plural = 'Contacts'
-    

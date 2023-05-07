@@ -25,7 +25,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv("SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get("DEBUG", 0)
+DEBUG = int(os.environ.get("DEBUG", 0))
 
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS").split(" ")
 
@@ -42,7 +42,9 @@ INSTALLED_APPS = [
     "django_extensions",# for access to abstractmodels and classes
     "django_filters",# used with DRF
     "rest_framework",# DRF itself
-    "core"#core app
+    "rest_framework.authtoken",# used to enable tokens
+    "core",#core app
+    "ecommerce",# ecommerce app
 ]
 
 MIDDLEWARE = [
@@ -127,6 +129,9 @@ REST_FRAMEWORK = {
     'DEFAULT_PARSER_CLASSES': (
         'rest_framework_json_api.parsers.JSONParser',
     ),
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+    ],
     'DEFAULT_RENDERER_CLASSES': (
         'rest_framework_json_api.renderers.JSONRenderer',
         'rest_framework.renderers.BrowsableAPIRenderer'
