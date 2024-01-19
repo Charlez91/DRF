@@ -4,7 +4,7 @@ from rest_framework.status import HTTP_400_BAD_REQUEST
 from rest_framework.exceptions import APIException
 from rest_framework_json_api.serializers import (
     ModelSerializer,
-    PrimaryKeyRelatedField
+    PrimaryKeyRelatedField,
     )
 
 
@@ -23,9 +23,26 @@ class ItemSerializer(ModelSerializer):
         model: Item = Item
         fields: list = [
             'title',
+            'description',
             'stock',
-            'price'
+            'price',
+            'image',
         ]
+
+class ItemCreateSerializer(ModelSerializer):
+    """
+    Item serializer class from Item model
+    TO create new items and update
+    """
+    class Meta:
+        model: Item = Item
+        fields: tuple = (
+            'title',
+            'description',
+            'stock',
+            'price',
+            "image",
+        )
 
 
 class OrderSerializer(ModelSerializer):
@@ -51,3 +68,5 @@ class OrderSerializer(ModelSerializer):
             'item',
             'quantity',
         )
+
+
