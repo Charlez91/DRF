@@ -13,6 +13,11 @@ class OrderInline(admin.StackedInline):
     model = Order
     extra = 1
 
+
+class CategoryInline(admin.TabularInline):
+    model = Category
+    extra = 1
+
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
     inlines = [OrderInline, ItemInline]
@@ -24,16 +29,19 @@ class OrderItemInline(admin.TabularInline):
 @admin.register(Item)
 class ItemAdmin(admin.ModelAdmin):
     list_display = ('id', 'title', 'stock', 'price', 'created', 'category')
-    list_filter = ("created",)
+    list_filter = ("created","title", "category")
     search_fields = ("title", "status", "id")
+    prepopulated_fields = {'slug': ('title',)}
+    ordering = ["-created", 'title', ]
     inlines = [ OrderItemInline]
 
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
     list_display = ('id', 'quantity', 'status', "created", 'total_price', "user")
-    list_filter = ("created",)
+    list_filter = ("created","status","user")
     search_fields = ("title", "status", "id")
+    ordering = ['-created',"status", ]
     inlines = [OrderItemInline]
 
 
@@ -46,9 +54,10 @@ class ColorAdmin(admin.ModelAdmin):
 
 @admin.register(Currency)
 class CurrencyAdmin(admin.ModelAdmin):
-    list_display = ('id', 'name', "symbol" )
+    list_display = ('id', 'name', "symbol", )
     list_filter = ("name",)
     search_fields = ("name", "symbol",)
+    ordering = ["name",]
     inlines = [ItemInline]
 
 
@@ -57,9 +66,14 @@ class CategoryAdmin(admin.ModelAdmin):
     list_display = ('id', 'name', 'description')
     list_filter = ("name",)
     search_fields = ("name",)
-    inlines = [ItemInline]
+    prepopulated_fields = {'slug': ('name',)}
+    ordering = ['name', ]
+    inlines = [ItemInline, CategoryInline]
 
 
 @admin.register(OrderItem)
 class OrderItemAdmin(admin.ModelAdmin):
     list_display = ('order', 'item', 'quantity')
+    list_filter = ("order","item")
+    search_fields = ("order",)
+    ordering = ['order', ]

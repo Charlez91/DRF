@@ -1,14 +1,16 @@
 from django.db import models
+from django.conf import settings
 #from django.contrib.auth.models import User
 from django_extensions.db.models import (
     TimeStampedModel,
     ActivatorModel,
-    TitleSlugDescriptionModel
+    TitleSlugDescriptionModel,
+    AutoSlugField
 )
 from PIL import Image
 
+#from core.models import CustomUser
 from utils.model_abstracts import Model
-from core.models import CustomUser
 
 """
 #image class for item images incases of multiple images for an item
@@ -25,27 +27,43 @@ def process_item_image(instance)->None:
     #open image and makes a copy
     img = Image.open(instance.image.path)
     img_thumbnail = Image.Image.copy(img)
-    #logic to resize image
+    #logic to resize image and save to image path
     if img.height > 300 or img.width > 300:
         output_size = (300,300)
         img = img.resize(output_size)
         img.save(instance.image.path)
-    #logic to resize thumbnail
+    #logic to resize thumbnail and save to image path
     if img_thumbnail.height > 125 or img_thumbnail.width > 125:
         img_thumbnail.thumbnail((125,125))
         img.save(instance.thumbnail.path)
 
 
-class Category(models.Model):
+class Category( models.Model):
     """
     `ecommerce.category`
     Stores a single category entry.
     """
     name = models.CharField(max_length= 255, unique=True)
+    slug = AutoSlugField(populate_from='name')
     description = models.TextField(blank=True,null=True)
+    parent=models.ForeignKey("self", null=True, blank=True, on_delete=models.CASCADE)#parent category
 
     def __str__(self) -> str:
         return self.name
+    
+    def get_sub_categories(self):
+        '''
+        returns all sub-categories to current instance
+        '''
+        return Category.objects.filter(parent=self).filter(active=True)
+    
+    def get_parent_category(self):
+        '''
+        Returns the parent category of current instance
+        '''
+        if self.parent is not None:
+            return self.parent
+        return None
 
 
 class Color(models.Model):
@@ -80,7 +98,7 @@ class Item(TimeStampedModel, ActivatorModel, TitleSlugDescriptionModel, Model):
     Stores a single item entry for our shop
     related to model: User and model:ecommerce.category and model
     """
-    vendor = models.ForeignKey(CustomUser, on_delete= models.CASCADE, null=True, blank=True)
+    vendor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete= models.CASCADE, null=True, blank=True)
     category = models.ForeignKey(Category, on_delete= models.SET_NULL, null=True, blank=True)
     currency = models.ForeignKey(Currency, on_delete= models.CASCADE, null=True, blank=True)
     stock = models.PositiveIntegerField(default=1)
@@ -88,17 +106,21 @@ class Item(TimeStampedModel, ActivatorModel, TitleSlugDescriptionModel, Model):
     image = models.ImageField(default="default.jpg", upload_to="item_images")# will later make a one to many/many to many relationship cos an item might have multiple images and images can be shared too btw items
     thumbnail = models.ImageField(default="default.jpg", upload_to="item_thumbnails")
     weight = models.DecimalField(max_digits = 10, decimal_places=3, default=0)#in kg
+    specifications = models.JSONField(null=True, blank=True)
     colors = models.ManyToManyField(Color, related_name='items')
 
     def __str__(self) -> str:
         return self.title
     
-    def save(self) -> None:
+    def process_image(self):
+        process_item_image(self)
+    
+    def save(self, *args, **kwargs) -> None:
         '''
         Image manipulation logic for thumbnail and image logic and saved
         '''
-        super().save()
-        process_item_image(self)
+        super().save(*args, **kwargs)
+        #process_item_image(self)#dis adds computational overhead to save 
         
         
     @property
@@ -119,7 +141,7 @@ class Item(TimeStampedModel, ActivatorModel, TitleSlugDescriptionModel, Model):
             return True
         return False
 
-    def place_order(self, user:CustomUser, qty:int):
+    def place_order(self, user, qty:int):
         #used to place an order
         if self.check_stock(qty):
             order:Order = Order.objects.create(
@@ -155,7 +177,7 @@ class Order(TimeStampedModel, ActivatorModel, Model):
         RETURNED = "returned", "RETURNED"
         REFUNDED = "refunded", "REFUNDED"
 
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, null=True, blank=True)#buyer
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True)#buyer
     item = models.ManyToManyField(Item, through="OrderItem")
     quantity = models.PositiveIntegerField(verbose_name="quantity", default=1)
     total_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
@@ -193,9 +215,9 @@ class OrderItem(models.Model):
         return f'Order #{self.order.id} - {self.item.title} x {self.quantity}'
     
 class Transaction(models.Model):
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)#buyer
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)#buyer
     amount = models.DecimalField(max_digits=10, decimal_places=2)#in fiat
-    paid = models.BooleanField()
+    paid = models.BooleanField(default=False)#substitutes status
     timestamp = models.DateTimeField(auto_now_add=True)
     currency = models.ForeignKey(Currency, on_delete= models.CASCADE, null=True, blank=True)
 

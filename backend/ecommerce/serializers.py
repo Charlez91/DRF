@@ -50,7 +50,7 @@ class OrderSerializer(ModelSerializer):
     Order serializer from OrderModel
     with field as shown below
     """
-    item = PrimaryKeyRelatedField(queryset = Item.objects.all(), many=False)
+    item = PrimaryKeyRelatedField(queryset = Item.objects.all(), many=True)
 
     def validate(self, res: OrderedDict) -> OrderedDict or NotEnoughStockException:
         """
