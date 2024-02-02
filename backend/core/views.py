@@ -2,8 +2,16 @@ from json import JSONDecodeError
 
 from django.http import JsonResponse
 from django.shortcuts import render
+from django.views.generic import View
+from django.contrib import messages
+from django.contrib.sites.shortcuts import get_current_site
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.template.loader import render_to_string
+from django.utils.encoding import force_bytes, force_str
+from django.core.mail import send_mail
 from rest_framework.status import (
-    HTTP_200_OK, HTTP_201_CREATED, HTTP_400_BAD_REQUEST
+    HTTP_200_OK, HTTP_201_CREATED, 
+    HTTP_400_BAD_REQUEST, HTTP_403_FORBIDDEN
     )
 from rest_framework.views import APIView
 from rest_framework.viewsets import GenericViewSet
@@ -18,14 +26,42 @@ from drf_spectacular.utils import extend_schema, OpenApiResponse
 
 from .serializers import (ContactSerializer, 
                           CustomerSerializer, 
-                          CustomUserSerializer, 
-                          EmployeeSerializer,
+                          EmployeeSerializer, 
+                          EmployeeUpdateSerializer,
                           CustomerRegisterSerializer,
                           CustomerUpdateSerializer,
                           EmployeeRegisterSerializer,
                           CommentSerializer
                           )
-from .models import Comment
+from .models import Comment, CustomUser
+from .token import account_activation_token
+
+#integrate celery
+def send_activation_email(request, user:CustomUser):
+    current_site = get_current_site(request)
+    subject = 'Activate Your Ecommerce App Account'
+    message = render_to_string('core/account_activation_email.html',
+    {
+        'user': user,
+        'domain': current_site.domain,
+        'uid': urlsafe_base64_encode(force_bytes(user.pk)),
+        'token': account_activation_token.make_token(user),
+    })
+    user.email_user(subject, message)
+    send_mail(subject=subject, message=message, recipient_list=[user.email])
+
+def send_update_notification(username, email):
+    subject = 'Profile Update Successful'
+    message = f'''
+Hello {username},
+Your Account Profile Has been updated.
+
+If you did not initiate this request, change your password immediately. 
+Also email support to inform us about it.
+'''
+    send_mail(subject=subject, message=message, recipient_list=[email])
+
+
 
 
 # Create your views here.
@@ -85,8 +121,10 @@ class CustomerRegisterAPIView(APIView):
         serializer = CustomerRegisterSerializer(data = request.data)
         if serializer.is_valid():
             print(serializer.validated_data, serializer.data) #to view the validated data object/dict
-            #serializer.save()
-            return Response({"message":"User Registered Successfully", "data":serializer.data}, HTTP_201_CREATED)
+            #user = serializer.save()
+            #send_activation_email(request, user)
+            return Response({"message":"User Registered Successfully. Activation Email Sent", 
+                             "data":serializer.data}, HTTP_201_CREATED)
         return Response(serializer.errors, HTTP_400_BAD_REQUEST)
 
 
@@ -94,7 +132,7 @@ class CustomerUpdateAPIView(APIView):#testing between using APIVIEW or genericvi
     """
     Customer Update/Get Profile Details  View 
     """
-    parser_classes: list = [MultiPartParser, JSONParser]
+    parser_classes: list = [MultiPartParser, FormParser, JSONParser]
     permission_classes = (IsAuthenticated,)
     #serializer_class = UserRegisterSerializer #no need for this. serializer_class field/get_serializer method not in APIView parent class.
 
@@ -110,24 +148,28 @@ class CustomerUpdateAPIView(APIView):#testing between using APIVIEW or genericvi
 
     def get(self, request):
         serializer = CustomerSerializer(instance=request.user)
-        serializer.is_valid(raise_exception=True)#just for tests. NOT NEEDED
         return Response(serializer.data, HTTP_200_OK)
     
     def patch(self, request):
-        serializer = CustomerUpdateSerializer(instance=request.user.customerprofile, 
-                                              data=request.data, files=request.files, partial= True)
-        if serializer.is_valid(raise_exception=True):
+        instance = request.user
+        serializer = CustomerUpdateSerializer(instance=instance, data=request.data, 
+                                            files=request.files, partial= True)
+        if instance.is_staff==True:
+            return Response({"error":"NOT ALLOWED. Only Customers can update their details"},
+                            status=HTTP_403_FORBIDDEN)
+        if serializer.is_valid():
             #serializer.save()
+            #send_update_notification(instance.username, instance.email)
             return Response(serializer.data, HTTP_200_OK)
         return Response(serializer.errors, HTTP_400_BAD_REQUEST)
 
 
 
-class EmployeerRegisterAPIView(APIView):
+class EmployeerAPIView(APIView):
     """
     User Registration View to register new users
     """
-    parser_classes: list = [FormParser, JSONParser]
+    parser_classes: list = [FormParser, MultiPartParser, JSONParser]
     permission_classes = (IsAuthenticated,)
     #serializer_class = UserRegisterSerializer #no need for this. serializer_class field/get_serializer method not in APIView parent class.
 
@@ -143,12 +185,61 @@ class EmployeerRegisterAPIView(APIView):
 
     def post(self, request):
         serializer = EmployeeRegisterSerializer(data = request.data)
-        if serializer.is_valid() and request.user.is_staff:
+        if serializer.is_valid() and request.user.is_staff:#only staffs can register staff
             print(serializer.validated_data, serializer.data) #to view the validated data object/dict
             #serializer.save()
             return Response({"message":"Employee User Registered Successfully", 
                              "data":serializer.data}, HTTP_201_CREATED)
         return Response(serializer.errors, HTTP_400_BAD_REQUEST)
+    
+    
+    def get(self, request):
+        serializer = EmployeeSerializer(instance=request.user.employeeprofile)
+        return Response(serializer.data, HTTP_200_OK)
+    
+    def patch(self, request):
+        instance = request.user
+        serializer = EmployeeUpdateSerializer(instance=instance, data=request.data, 
+                                             partial= True)
+        try:
+            if instance.is_staff==False and instance.employeeprofile:
+                return Response({"error":"NOT ALLOWED. Only Staff can update their details"},
+                                    status=HTTP_403_FORBIDDEN)
+        except:
+            return Response({"error":"profile does not exist"}, HTTP_400_BAD_REQUEST)
+        print("here")
+        if serializer.is_valid(raise_exception=True):
+            #serializer.save()
+            return Response(serializer.data, HTTP_200_OK)
+        return Response(serializer.errors, HTTP_400_BAD_REQUEST)
+
+
+class ActivateView(View):
+
+    def get(self, request, uidb64, token):
+        try:
+            uid = force_str(urlsafe_base64_decode(uidb64))
+            user = CustomUser.objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, CustomUser.DoesNotExist):
+            user = None
+
+        if user is not None and account_activation_token.check_token(user,
+                                                                     token):
+            user.is_active = True
+            user.email_verified = True
+            user.save()
+
+            username = user.username
+
+            messages.success(request, f"Congratulations {username} !!! "
+                                      f"Your account was created and activated "
+                                      f"successfully"
+                             )
+
+            return render(request=request, template_name='core/account_activation_valid.html')
+        else:
+            return render(request, 'core/account_activation_invalid.html')
+
 
 
 class CommentViewset(ListModelMixin, CreateModelMixin, 
@@ -160,7 +251,7 @@ class CommentViewset(ListModelMixin, CreateModelMixin,
     serializer_class = CommentSerializer
     permission_classes = (IsAuthenticated,)
     filterset_fields = ["approved", "email", "rating"]
-    search_fields = ["email", "vendor__email", "comment"]
+    search_fields = ["email", "vendor__email", "item__id", "comment"]
     ordering_fields = ["email", "date_created"]
     ordering = ["-date_created"]
 

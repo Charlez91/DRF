@@ -1,0 +1,9 @@
+{% autoescape off %}
+Hi {{ user.username }},
+
+Welcome to Ecommerce App.
+
+Please click on the link below to confirm your registration:
+
+http://{{ domain }}{% url 'core:activate' uidb64=uid token=token %}
+{% endautoescape %}

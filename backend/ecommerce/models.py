@@ -51,6 +51,12 @@ class Category( models.Model):
     def __str__(self) -> str:
         return self.name
     
+    def get_comments(self):
+        '''
+        Gets all comments/ratings on items
+        '''
+        return self.comment.filter(active=True)
+    
     def get_sub_categories(self):
         '''
         returns all sub-categories to current instance

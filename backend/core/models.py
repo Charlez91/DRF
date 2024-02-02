@@ -18,6 +18,7 @@ from ecommerce.models import Item
 def process_user_image(instance)->None:
     #this operation adds computational overhead each time a save/update to models is done
     #needs to be reviewed -> Done
+    print("processing image")#will replace all prints with logging properly
     img = Image.open(instance.image.path)
 
     if img.height > 150 or img.width > 150:
@@ -48,6 +49,8 @@ class Contact(
 class CustomUser(AbstractUser):
     gender_choices = (("M", "Male"),
                       ("F", "Female"))
+    email = models.EmailField(unique=True, 
+                error_messages={"unique": "A user with that email already exists.",},)
     gender = models.CharField(choices=gender_choices,max_length=20, null=True, blank=True)
     bio = models.TextField()
     date_of_birth = models.DateField(null=True, blank=True)
@@ -63,9 +66,16 @@ class CustomUser(AbstractUser):
             return f"{self.username}"
     
     def process_image(self)->None:
-        process_user_image(self)  
+        process_user_image(self)
+    
+    def get_comments(self):
+        '''
+        Gets all comment/ratings on items
+        '''
+        return self.comments.filter(active=True)
 
     def save(self, *args, **kwargs) -> None:
+        print("saving")
         super().save(*args, **kwargs)
         process_user_image(self)
 

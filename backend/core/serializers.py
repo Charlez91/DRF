@@ -1,15 +1,16 @@
 from django.contrib.auth.hashers import make_password
-from django.core.mail import send_mail
+
 from rest_framework.serializers import ModelSerializer  # CharField can be imported here too
 from rest_framework.exceptions import ValidationError
 from rest_framework.status import HTTP_400_BAD_REQUEST, HTTP_200_OK
 from rest_framework.fields import (
-    CharField, EmailField, 
-    DecimalField, URLField, 
+    CharField, EmailField,  URLField, 
     ) #CharField should be imported here(directly)
 from rest_framework_json_api.serializers import PrimaryKeyRelatedField
 
-from .models import (Contact, CustomUser, CustomerProfile, EmployeeProfile, Comment)
+from .models import (Contact, CustomUser, 
+                     CustomerProfile, EmployeeProfile, Comment)
+from ecommerce.models import Item
 
 
 class ContactSerializer(ModelSerializer):
@@ -38,7 +39,8 @@ class CustomerRegisterSerializer(ModelSerializer):
     def create(self, validated_data):
         user_type = validated_data.pop("user_type")
         validated_data["password"] = make_password(validated_data.get("password"))
-        user = CustomUser.objects.create(**validated_data)
+        user = CustomUser.objects.create(is_active= False, **validated_data)
+        #if signals are used for profile creation, dis is not needed
         CustomerProfile.objects.create(user=user, user_type=user_type)
         #implement algorithm to send email on registration
         return user
@@ -54,6 +56,7 @@ class CustomerRegisterSerializer(ModelSerializer):
             "gender",
             "phone",
             "user_type",
+            "date_of_birth"
         )
 
 
@@ -85,6 +88,7 @@ class EmployeeRegisterSerializer(ModelSerializer):
             "gender",
             "phone",
             "department",
+            "date_of_birth"
         )
 
 
@@ -98,7 +102,6 @@ class CustomerUpdateSerializer(ModelSerializer):
     user_type = CharField(source="customerprofile.user_type")
     store_address = CharField(source="customerprofile.store_address")
     store_url = URLField(source="customerprofile.store_url")
-    avg_rating = DecimalField(source="customerprofile.avg_rating", max_digits=4, decimal_places=2)
     
     def update(self, instance, validated_data):
         profile: CustomerProfile = instance.customerprofile
@@ -127,16 +130,72 @@ class CustomerUpdateSerializer(ModelSerializer):
         model: CustomUser = CustomUser
         fields: tuple = (
             "email", "username", "gender",
-            "address", "country",
+            "address", "country", "date_of_birth",
             "bio", "image", "first_name",
             "phone", "user_type", "last_name",
             "store_address", "store_url",
-            "avg_rating",
+            "avg_rating","password",
         )
         read_only_fields = (
             "country", "gender", 
             "avg_rating", "user_type", 
-            "username", "email", "gender"
+            "username", "email","date_of_birth",
+        )
+
+
+class EmployeeUpdateSerializer(ModelSerializer):
+    """
+    Used to Update Users(Employee) profile
+    had to follow this approach cos of forms where nested request body data is difficult
+    """
+
+    password = CharField( write_only=True, required=False, min_length=8)
+    skills = CharField(source="employeeprofile.skills")
+    department = CharField(source="employeeprofile.department")
+    position = CharField(source="employeeprofile.position")
+    
+    def update(self, instance, validated_data):
+        #extract profile details
+        profile: EmployeeProfile = instance.employeeprofile
+        skills = validated_data.pop("skills", profile.skills)
+        department = validated_data.pop("department", profile.department)
+        position = validated_data.pop("position", profile.position)
+
+        #user instance update
+        if validated_data.get("password") is not None:
+            instance.set_password(validated_data["password"])
+        instance.first_name = validated_data.get("first_name", instance.first_name)
+        instance.last_name = validated_data.get("last_name", instance.last_name)
+        instance.address = validated_data.get("address", instance.address)
+        instance.image = validated_data.get("image", instance.image)
+        print("debugss")
+        instance.bio = validated_data.get("bio")
+        instance.phone = validated_data.get("phone")
+        instance.save()
+        #implement algorithm for sending email on instance update
+
+        #profile update
+        profile.skills = skills
+        profile.department = department
+        profile.position = position
+        profile.save()
+        return instance
+
+    class Meta:
+        model: CustomUser = CustomUser
+        fields: tuple = (
+            "email", "username", "gender",
+            "address", "country", "date_of_birth",
+            "bio", "image", "first_name",
+            "phone", "skills", "last_name",
+            "department", "position",
+            "avg_rating", "password",
+        )
+        read_only_fields = (
+            "country", "gender", 
+            "avg_rating", "user_type", 
+            "username", "email", 
+            #"position","department", "date_of_birth" # user shouldnt be able update position & dept only superusers
         )
 
 
@@ -145,9 +204,11 @@ class CustomUserSerializer(ModelSerializer):
     class Meta:
         model = CustomUser
         fields: tuple = (
-            "username",
-            "email",
-            "Country",
+            "username","email",
+            "gender","bio",
+            "date_of_birth",
+            "phone","address",
+            "country","image",
         )
 
 
@@ -161,7 +222,9 @@ class EmployeeSerializer(ModelSerializer):
             "user",
             "skills",
             "department",
+            "position"
         )
+        #depth = 1
     
 
 class CustomerSerializer(ModelSerializer):
@@ -173,6 +236,8 @@ class CustomerSerializer(ModelSerializer):
         fields: tuple = (
             "user",
             "user_type",
+            "store_address",
+            "store_url"
         )
 
 
@@ -181,10 +246,11 @@ class CommentSerializer(ModelSerializer):
     Serializer for comment viewset
     """
     vendor = PrimaryKeyRelatedField(queryset=CustomUser.objects.all())#might use select-related later
+    item = PrimaryKeyRelatedField(queryset=Item.objects.all())#might use select-related later
 
     class Meta:
         model = Comment
-        field = ("name", "email", "comment", "rating", "vendor")
+        field = ("name", "email", "comment", "rating", "item", "vendor")
     
     def validate_rating(self, value):
         '''
