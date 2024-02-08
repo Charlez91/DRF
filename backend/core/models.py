@@ -1,7 +1,9 @@
 from collections.abc import Iterable
 from typing import Any
 
+from django.core.validators import MinValueValidator
 from django.contrib.auth.models import AbstractUser
+from django.db.models.query import QuerySet
 from django.utils import timezone
 from django.db import models
 from django_extensions.db.models import (
@@ -85,6 +87,18 @@ class CustomUser(AbstractUser):
         ordering = ["id"]
 
 
+class CommentManager(models.Manager):
+    """
+    Models Manager for Comments Model
+    """
+    def get_queryset(self) -> QuerySet:
+        '''
+        Return when called approved set to true
+        and deleted false. to keep track of all comments
+        '''
+        return super().get_queryset().filter(approved=True).filter(deleted=False)
+
+
 class Comment(models.Model):
     """
     Comment/Rating Model for comments/ratings of various vendors
@@ -99,7 +113,10 @@ class Comment(models.Model):
     date_created = models.DateTimeField(default=timezone.now)
     date_updated = models.DateTimeField(auto_now=True)
     approved = models.BooleanField(default=True)
-    rating = models.DecimalField(decimal_places=2, max_digits=4)
+    deleted = models.BooleanField(default=False)
+    rating = models.DecimalField(decimal_places=2, max_digits=4, validators=[MinValueValidator(1, message="Rating must not be less than 1")])
+
+    objects = CommentManager()
     
     def save(self, *args, **kwargs) -> None:
         print("saving")
@@ -113,9 +130,11 @@ class Comment(models.Model):
         super().save(*args, **kwargs)
     
     def delete(self, *args, **kwargs) -> tuple[int, dict[str, int]]:
-         print("deleting")
-         #REMEMBER to update algorithm incase of delete of comment/rating
-         return super().delete(*args, **kwargs)
+        print("deleting")
+        #REMEMBER to update algorithm incase of delete of comment/rating
+        self.deleted = True
+        self.save()
+        #return super().delete(*args, **kwargs)
 
     def __str__(self):
         return f"{self.email} Comment"

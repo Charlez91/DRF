@@ -37,11 +37,13 @@ class CustomerRegisterSerializer(ModelSerializer):
     user_type = CharField(source="customerprofile.user_type")
 
     def create(self, validated_data):
-        user_type = validated_data.pop("user_type")
+        print(validated_data)
+        profile = validated_data.pop("customerprofile")
         validated_data["password"] = make_password(validated_data.get("password"))
-        user = CustomUser.objects.create(is_active= False, **validated_data)
+        #user = CustomUser.objects.create(is_active= False, **validated_data)
+        user = CustomUser.objects.create(**validated_data)
         #if signals are used for profile creation, dis is not needed
-        CustomerProfile.objects.create(user=user, user_type=user_type)
+        CustomerProfile.objects.create(user=user, **profile)
         #implement algorithm to send email on registration
         return user
 
@@ -105,8 +107,9 @@ class CustomerUpdateSerializer(ModelSerializer):
     
     def update(self, instance, validated_data):
         profile: CustomerProfile = instance.customerprofile
-        store_address = validated_data.pop("store_address", profile.store_address)
-        store_url = validated_data.pop("store_url", profile.store_url)
+        profile_data = validated_data.pop("customerprofile", {}) #wrap in try except block
+        store_address = profile_data.pop("store_address", profile.store_address)
+        store_url = profile_data.pop("store_url", profile.store_url)
 
         #user instance update
         if validated_data.get("password") != None:
@@ -153,13 +156,14 @@ class EmployeeUpdateSerializer(ModelSerializer):
     skills = CharField(source="employeeprofile.skills")
     department = CharField(source="employeeprofile.department")
     position = CharField(source="employeeprofile.position")
-    
+
     def update(self, instance, validated_data):
         #extract profile details
         profile: EmployeeProfile = instance.employeeprofile
-        skills = validated_data.pop("skills", profile.skills)
-        department = validated_data.pop("department", profile.department)
-        position = validated_data.pop("position", profile.position)
+        profile_data = validated_data.pop("employeeprofile", {})
+        skills = profile_data.pop("skills", profile.skills)
+        department = profile_data.pop("department", profile.department)
+        position = profile_data.pop("position", profile.position)
 
         #user instance update
         if validated_data.get("password") is not None:
@@ -168,11 +172,9 @@ class EmployeeUpdateSerializer(ModelSerializer):
         instance.last_name = validated_data.get("last_name", instance.last_name)
         instance.address = validated_data.get("address", instance.address)
         instance.image = validated_data.get("image", instance.image)
-        print("debugss")
         instance.bio = validated_data.get("bio")
         instance.phone = validated_data.get("phone")
         instance.save()
-        #implement algorithm for sending email on instance update
 
         #profile update
         profile.skills = skills
@@ -193,8 +195,7 @@ class EmployeeUpdateSerializer(ModelSerializer):
         )
         read_only_fields = (
             "country", "gender", 
-            "avg_rating", "user_type", 
-            "username", "email", 
+            "avg_rating", "username", "email", 
             #"position","department", "date_of_birth" # user shouldnt be able update position & dept only superusers
         )
 

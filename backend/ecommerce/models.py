@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from django.core.validators import MinValueValidator
 #from django.contrib.auth.models import User
 from django_extensions.db.models import (
     TimeStampedModel,
@@ -107,7 +108,7 @@ class Item(TimeStampedModel, ActivatorModel, TitleSlugDescriptionModel, Model):
     vendor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete= models.CASCADE, null=True, blank=True)
     category = models.ForeignKey(Category, on_delete= models.SET_NULL, null=True, blank=True)
     currency = models.ForeignKey(Currency, on_delete= models.CASCADE, null=True, blank=True)
-    stock = models.PositiveIntegerField(default=1)
+    stock = models.PositiveIntegerField(default=1)#number in stock/inventory
     price = models.IntegerField(default=0) # normally should be a float field but price here is actually in pence, cents, kobo
     image = models.ImageField(default="default.jpg", upload_to="item_images")# will later make a one to many/many to many relationship cos an item might have multiple images and images can be shared too btw items
     thumbnail = models.ImageField(default="default.jpg", upload_to="item_thumbnails")
@@ -187,7 +188,7 @@ class Order(TimeStampedModel, ActivatorModel, Model):
     item = models.ManyToManyField(Item, through="OrderItem")
     quantity = models.PositiveIntegerField(verbose_name="quantity", default=1)
     total_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-    total_weight = models.DecimalField(max_digits = 10, decimal_places=3, default=0)
+    total_weight = models.DecimalField(max_digits = 10, decimal_places=3, default=0)#might use null for no weight infos
     status = models.CharField(verbose_name="Status", choices = OrderStatus.choices, default=OrderStatus.PENDING, max_length=20)
     transaction = models.OneToOneField("Transaction", on_delete=models.SET_NULL, null=True, blank=True)
 
@@ -222,7 +223,7 @@ class OrderItem(models.Model):
     
 class Transaction(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)#buyer
-    amount = models.DecimalField(max_digits=10, decimal_places=2)#in fiat
+    amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(1)])#in fiat
     paid = models.BooleanField(default=False)#substitutes status
     timestamp = models.DateTimeField(auto_now_add=True)
     currency = models.ForeignKey(Currency, on_delete= models.CASCADE, null=True, blank=True)

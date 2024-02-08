@@ -4,7 +4,7 @@ from rest_framework.routers import DefaultRouter
 from core import views as core_views
 
 #specifies appname for name spacing
-appname = "core"
+app_name = "core"
 
 router = DefaultRouter()
 # registering routes mainly for viewsets
@@ -17,5 +17,6 @@ urlpatterns = [
     path("profile/", core_views.CustomerUpdateAPIView.as_view(), name="profile-update"),
     path("staff/", core_views.EmployeerAPIView.as_view(), name="staff"),
     path(route='activate/<uidb64>/<token>/', view= core_views.ActivateView.as_view(),name='activate'),
+    path("email-verify/", core_views.EmailVerificationView.as_view(), name="email-verify")
 
 ]

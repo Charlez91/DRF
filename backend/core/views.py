@@ -48,7 +48,7 @@ def send_activation_email(request, user:CustomUser):
         'token': account_activation_token.make_token(user),
     })
     user.email_user(subject, message)
-    send_mail(subject=subject, message=message, recipient_list=[user.email])
+    send_mail(subject=subject, message=message, from_email="donotreply@ecom.com", recipient_list=[user.email])
 
 def send_update_notification(username, email):
     subject = 'Profile Update Successful'
@@ -59,7 +59,7 @@ Your Account Profile Has been updated.
 If you did not initiate this request, change your password immediately. 
 Also email support to inform us about it.
 '''
-    send_mail(subject=subject, message=message, recipient_list=[email])
+    send_mail(subject=subject, message=message,from_email="donotreply@ecom.com", recipient_list=[email])
 
 
 
@@ -120,9 +120,9 @@ class CustomerRegisterAPIView(APIView):
         #user_serializer = CustomUserSerializer(data=request.data)
         serializer = CustomerRegisterSerializer(data = request.data)
         if serializer.is_valid():
-            print(serializer.validated_data, serializer.data) #to view the validated data object/dict
-            #user = serializer.save()
-            #send_activation_email(request, user)
+            #print(serializer.validated_data, serializer.data) #to view the validated data object/dict
+            user = serializer.save()
+            send_activation_email(request, user)
             return Response({"message":"User Registered Successfully. Activation Email Sent", 
                              "data":serializer.data}, HTTP_201_CREATED)
         return Response(serializer.errors, HTTP_400_BAD_REQUEST)
@@ -153,12 +153,13 @@ class CustomerUpdateAPIView(APIView):#testing between using APIVIEW or genericvi
     def patch(self, request):
         instance = request.user
         serializer = CustomerUpdateSerializer(instance=instance, data=request.data, 
-                                            files=request.files, partial= True)
+                                            partial= True)
         if instance.is_staff==True:
             return Response({"error":"NOT ALLOWED. Only Customers can update their details"},
                             status=HTTP_403_FORBIDDEN)
         if serializer.is_valid():
-            #serializer.save()
+            print(serializer.validated_data)
+            serializer.save()
             #send_update_notification(instance.username, instance.email)
             return Response(serializer.data, HTTP_200_OK)
         return Response(serializer.errors, HTTP_400_BAD_REQUEST)
@@ -186,7 +187,7 @@ class EmployeerAPIView(APIView):
     def post(self, request):
         serializer = EmployeeRegisterSerializer(data = request.data)
         if serializer.is_valid() and request.user.is_staff:#only staffs can register staff
-            print(serializer.validated_data, serializer.data) #to view the validated data object/dict
+            #print(serializer.validated_data, serializer.data) #to view the validated data object/dict
             #serializer.save()
             return Response({"message":"Employee User Registered Successfully", 
                              "data":serializer.data}, HTTP_201_CREATED)
@@ -209,12 +210,33 @@ class EmployeerAPIView(APIView):
             return Response({"error":"profile does not exist"}, HTTP_400_BAD_REQUEST)
         print("here")
         if serializer.is_valid(raise_exception=True):
-            #serializer.save()
+            print(serializer.validated_data)
+            serializer.save()
+            send_update_notification(instance.username, instance.email)
             return Response(serializer.data, HTTP_200_OK)
         return Response(serializer.errors, HTTP_400_BAD_REQUEST)
 
 
+class EmailVerificationView(APIView):
+    """
+    View to check if a user's email is verified
+    Sends verification email if False
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        if user.email_verified == False:
+            send_activation_email(request, user)#would wrap in try-except block to handle email sending errors
+            return Response({"message": "Verification Email Sent successfully"}, HTTP_200_OK)
+        return Response({"message":"User's Email Has already been verified"}, HTTP_200_OK)
+
+
 class ActivateView(View):
+    """
+    View for Email Activation logic
+    Opens from verification mail
+    """
 
     def get(self, request, uidb64, token):
         try:
@@ -225,7 +247,7 @@ class ActivateView(View):
 
         if user is not None and account_activation_token.check_token(user,
                                                                      token):
-            user.is_active = True
+            #user.is_active = True #for now disabled
             user.email_verified = True
             user.save()
 

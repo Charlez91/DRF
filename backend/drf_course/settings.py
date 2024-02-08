@@ -159,6 +159,11 @@ CORS_ALLOWED_ORIGINS = [
 
 CORS_ALLOW_CREDENTIALS = True
 
+#Celery Settings
+CELERY_RESULT_BACKEND = "django-db"
+CELERY_BROKER_URL = os.getenv('REDIS_URL' ,'redis://localhost:6380')
+
+
 #rest framework settings
 REST_FRAMEWORK = {
     'EXCEPTION_HANDLER': 'rest_framework_json_api.exceptions.exception_handler',
