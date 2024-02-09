@@ -1,5 +1,5 @@
-from collections.abc import Iterable
-from typing import Any
+import os
+from random import randint
 
 from django.core.validators import MinValueValidator
 from django.contrib.auth.models import AbstractUser
@@ -11,12 +11,14 @@ from django_extensions.db.models import (
     ActivatorModel,
     TitleDescriptionModel)
 from PIL import Image
+from celery import shared_task
 
 from utils.model_abstracts import Model
 from ecommerce.models import Item
 
 
 #will add celery shared task decorator later
+@shared_task(name="process user image")
 def process_user_image(instance)->None:
     #this operation adds computational overhead each time a save/update to models is done
     #needs to be reviewed -> Done
@@ -48,6 +50,18 @@ class Contact(
         verbose_name_plural = 'Contacts'
 
 
+def get_filename_ext(filepath):
+    base_name = os.path.basename(filepath)
+    name, ext = os.path.splitext(base_name)
+    return name, ext
+
+def upload_image_path(instance, filename):
+    new_filename = randint(1,3910209312)
+    _, ext = get_filename_ext(filename)
+    final_filename = f'{new_filename}{ext}'
+    return "profile_pics/{new_filename}/{final_filename}".format(new_filename=new_filename, final_filename=final_filename)
+
+
 class CustomUser(AbstractUser):
     gender_choices = (("M", "Male"),
                       ("F", "Female"))
@@ -59,7 +73,7 @@ class CustomUser(AbstractUser):
     phone = models.CharField(max_length=15, blank=True, null=True)
     address = models.TextField(blank=True, null= True)
     country = models.CharField(max_length=100, null=True, blank=True)
-    image = models.ImageField(default="default.jpg", upload_to="profile_pics")
+    image = models.ImageField(default="default.jpg", upload_to=upload_image_path)#profile
     email_verified = models.BooleanField(default=False)
     avg_rating = models.DecimalField(decimal_places=2, max_digits=4, default=0)
     #amount earned, amount paid out
@@ -79,7 +93,7 @@ class CustomUser(AbstractUser):
     def save(self, *args, **kwargs) -> None:
         print("saving")
         super().save(*args, **kwargs)
-        process_user_image(self)
+        #process_user_image(self)#to reduce overhead on saving saving opeations
 
     class Meta:
         verbose_name = "CustomUser"

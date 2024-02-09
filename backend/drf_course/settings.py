@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "core",#core app for contact
     "ecommerce",# ecommerce app for orders and items
+    "django_celery_results",
 ]
 
 MIDDLEWARE = [
@@ -91,10 +92,22 @@ DATABASES = {
     }
 }
 
+"""
+#postgre db
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.environ.get("POSTGRES_DBNAME"),
+        'USER': os.environ.get("POSTGRES_USER"),
+        'PASSWORD': os.environ.get("POSTGRES_PASSWORD"),
+        'HOST': os.environ.get("POSTGRES_HOST",'localhost'),
+        'PORT': os.environ.get("POSTGRES_PORT",'5432'),
+    }
+}
+"""
+
 # Email Settings (Development)
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-
-
 
 # Email Settings (Production)
 #EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
@@ -125,7 +138,7 @@ AUTH_USER_MODEL = "core.CustomUser"
 
 LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = "UTC"
+TIME_ZONE = "Africa/Lagos"#changed from UTC
 
 USE_I18N = True
 
@@ -160,8 +173,12 @@ CORS_ALLOWED_ORIGINS = [
 CORS_ALLOW_CREDENTIALS = True
 
 #Celery Settings
-CELERY_RESULT_BACKEND = "django-db"
-CELERY_BROKER_URL = os.getenv('REDIS_URL' ,'redis://localhost:6380')
+CELERY_RESULT_BACKEND = os.getenv('RESULT_BACKEND', "django-db")
+CELERY_BROKER_URL = os.getenv('REDIS_URL' ,'redis://127.0.0.1:6379')
+CELERY_TIMEZONE = "Africa/Lagos"
+CELERY_ACCEPT_CONTENT = ["application/json"]
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TASK_SERIALIZER = "json"
 
 
 #rest framework settings

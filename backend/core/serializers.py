@@ -121,6 +121,8 @@ class CustomerUpdateSerializer(ModelSerializer):
         instance.bio = validated_data.get("bio")
         instance.phone = validated_data.get("phone")
         instance.save()
+        if validated_data.get("image") is not None:
+            instance.process_image()
         #implement algorithm for sending email on instance update
 
         #profile update
@@ -175,6 +177,8 @@ class EmployeeUpdateSerializer(ModelSerializer):
         instance.bio = validated_data.get("bio")
         instance.phone = validated_data.get("phone")
         instance.save()
+        if validated_data.get("image") is not None:
+            instance.process_image()
 
         #profile update
         profile.skills = skills

@@ -23,6 +23,7 @@ from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiResponse
+from celery import shared_task
 
 from .serializers import (ContactSerializer, 
                           CustomerSerializer, 
@@ -37,6 +38,7 @@ from .models import Comment, CustomUser
 from .token import account_activation_token
 
 #integrate celery
+@shared_task(name="activation email")
 def send_activation_email(request, user:CustomUser):
     current_site = get_current_site(request)
     subject = 'Activate Your Ecommerce App Account'
@@ -50,6 +52,7 @@ def send_activation_email(request, user:CustomUser):
     user.email_user(subject, message)
     send_mail(subject=subject, message=message, from_email="donotreply@ecom.com", recipient_list=[user.email])
 
+@shared_task(name="update email")
 def send_update_notification(username, email):
     subject = 'Profile Update Successful'
     message = f'''
@@ -160,7 +163,7 @@ class CustomerUpdateAPIView(APIView):#testing between using APIVIEW or genericvi
         if serializer.is_valid():
             print(serializer.validated_data)
             serializer.save()
-            #send_update_notification(instance.username, instance.email)
+            send_update_notification.delay(instance.username, instance.email)
             return Response(serializer.data, HTTP_200_OK)
         return Response(serializer.errors, HTTP_400_BAD_REQUEST)
 
@@ -170,14 +173,14 @@ class EmployeerAPIView(APIView):
     """
     User Registration View to register new users
     """
-    parser_classes: list = [FormParser, MultiPartParser, JSONParser]
+    parser_classes: list = [MultiPartParser, FormParser, JSONParser]
     permission_classes = (IsAuthenticated,)
     #serializer_class = UserRegisterSerializer #no need for this. serializer_class field/get_serializer method not in APIView parent class.
 
     @extend_schema(
         summary='Employee User Registration',
         description="This is POST method api, in which user data will be created and through signals tokens created as well",
-        request= CustomerRegisterSerializer,
+        request= EmployeeUpdateSerializer,
         responses={
             200: OpenApiResponse(description='Json Response'),
             400: OpenApiResponse(description='Validation error')
@@ -208,7 +211,6 @@ class EmployeerAPIView(APIView):
                                     status=HTTP_403_FORBIDDEN)
         except:
             return Response({"error":"profile does not exist"}, HTTP_400_BAD_REQUEST)
-        print("here")
         if serializer.is_valid(raise_exception=True):
             print(serializer.validated_data)
             serializer.save()

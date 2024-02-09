@@ -2,6 +2,9 @@ import os
 
 from celery import Celery
 
+
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'drf_course.settings') 
+
 app = Celery('drf_course')
 
 # Using a string here means the worker don't have to serialize
