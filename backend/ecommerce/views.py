@@ -60,7 +60,7 @@ class OrderViewSet(ListModelMixin, UpdateModelMixin, RetrieveModelMixin, Generic
         user = self.request.user
         return Order.objects.filter(user = user)
     
-    def create(self, request) -> Response or JsonResponse:
+    def create(self, request) -> Response:
         """
         For handling update/creating of orders
         """

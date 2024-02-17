@@ -13,22 +13,11 @@ from django_extensions.db.models import (
 from PIL import Image
 from celery import shared_task
 
+from .tasks import process_user_image
 from utils.model_abstracts import Model
 from ecommerce.models import Item
 
 
-#will add celery shared task decorator later
-@shared_task(name="process user image")
-def process_user_image(instance)->None:
-    #this operation adds computational overhead each time a save/update to models is done
-    #needs to be reviewed -> Done
-    print("processing image")#will replace all prints with logging properly
-    img = Image.open(instance.image.path)
-
-    if img.height > 150 or img.width > 150:
-        output_size = (150, 150)  # 125,125 was used in flask example though
-        img.thumbnail(output_size)
-        img.save(instance.image.path)
 
 # Create your models here.
 
@@ -59,7 +48,7 @@ def upload_image_path(instance, filename):
     new_filename = randint(1,3910209312)
     _, ext = get_filename_ext(filename)
     final_filename = f'{new_filename}{ext}'
-    return "profile_pics/{new_filename}/{final_filename}".format(new_filename=new_filename, final_filename=final_filename)
+    return "profile_pics/{final_filename}".format(final_filename=final_filename)
 
 
 class CustomUser(AbstractUser):
@@ -82,13 +71,13 @@ class CustomUser(AbstractUser):
             return f"{self.username}"
     
     def process_image(self)->None:
-        process_user_image(self)
+        process_user_image.delay(self.image.path)
     
     def get_comments(self):
         '''
-        Gets all comment/ratings on items
+        Gets all comment/ratings on user
         '''
-        return self.comments.filter(active=True)
+        return self.comments.filter(approved=True).filter(deleted=False)
 
     def save(self, *args, **kwargs) -> None:
         print("saving")
@@ -121,7 +110,7 @@ class Comment(models.Model):
     name = models.CharField(max_length=250, null=False, blank=False)#commenters name
     email = models.EmailField()#commenters email
     comment = models.TextField(null=True, blank=True)
-    vendor = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='comments')#vendor
+    vendor = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='comments')#vendor receiving rating
     #might add item foreign key relation field. to enable item rating
     item = models.ForeignKey(Item, on_delete=models.SET_NULL, blank=True, null=True)
     date_created = models.DateTimeField(default=timezone.now)
@@ -131,23 +120,40 @@ class Comment(models.Model):
     rating = models.DecimalField(decimal_places=2, max_digits=4, validators=[MinValueValidator(1, message="Rating must not be less than 1")])
 
     objects = CommentManager()
-    
-    def save(self, *args, **kwargs) -> None:
-        print("saving")
-        total = int(Comment.objects.count() + 1)
+
+
+    def save_avg_rating(self):
+        total = int(Comment.objects.filter(vendor=self.vendor).count())
         old_avg_rating = self.vendor.avg_rating
         current_rating = self.rating
-        new_sum = float(old_avg_rating) + float(current_rating)
+        new_sum = float(old_avg_rating * (total-1)) + float(current_rating)
         #implement validations against lte zero values for current_rating and gt 2dp in serializers or here
         new_avg_rating = new_sum/total
-        self.vendor.avg_rating = new_avg_rating#implement algorithm to make it rounded off to 2dp
+        self.vendor.avg_rating = round(new_avg_rating, 2)#implement algorithm to make it rounded off to 2dp
+        self.vendor.save()
+
+    def del_avg_rating(self):
+        old_avg_rating = self.vendor.avg_rating
+        current_rating = self.rating
+        total = int(Comment.objects.filter(vendor=self.vendor).count()+1)
+        new_sum = float((total * old_avg_rating) - current_rating)
+        new_avg_ratings = new_sum/(total-1)
+        self.vendor.avg_rating = round(new_avg_ratings, 2)
+        self.vendor.save()
+
+    def save(self, *args, op=None,**kwargs) -> None:
+        print("saving")
         super().save(*args, **kwargs)
-    
+        #might need to seperate this logic
+        if op == None:
+            self.save_avg_rating()
+
     def delete(self, *args, **kwargs) -> tuple[int, dict[str, int]]:
         print("deleting")
-        #REMEMBER to update algorithm incase of delete of comment/rating
         self.deleted = True
-        self.save()
+        self.save(op="Delete")
+        #REMEMBER to update algorithm incase of delete of comment/rating
+        self.del_avg_rating()
         #return super().delete(*args, **kwargs)
 
     def __str__(self):

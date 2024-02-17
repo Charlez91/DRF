@@ -1,20 +1,19 @@
 from json import JSONDecodeError
 
 from django.http import JsonResponse
-from django.shortcuts import render
+from django_filters.rest_framework import DjangoFilterBackend
+from django.shortcuts import render, get_object_or_404
 from django.views.generic import View
 from django.contrib import messages
-from django.contrib.sites.shortcuts import get_current_site
-from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
-from django.template.loader import render_to_string
-from django.utils.encoding import force_bytes, force_str
-from django.core.mail import send_mail
+from django.utils.http import urlsafe_base64_decode
+from django.utils.encoding import force_str
 from rest_framework.status import (
     HTTP_200_OK, HTTP_201_CREATED, 
     HTTP_400_BAD_REQUEST, HTTP_403_FORBIDDEN
     )
 from rest_framework.views import APIView
 from rest_framework.viewsets import GenericViewSet
+from rest_framework.generics import ListAPIView
 from rest_framework.mixins import (
     ListModelMixin, RetrieveModelMixin, 
     CreateModelMixin, DestroyModelMixin,
@@ -23,7 +22,6 @@ from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiResponse
-from celery import shared_task
 
 from .serializers import (ContactSerializer, 
                           CustomerSerializer, 
@@ -34,37 +32,9 @@ from .serializers import (ContactSerializer,
                           EmployeeRegisterSerializer,
                           CommentSerializer
                           )
-from .models import Comment, CustomUser
+from .models import Comment, CustomUser, CustomerProfile
+from .tasks import send_activation_email, send_update_notification
 from .token import account_activation_token
-
-#integrate celery
-@shared_task(name="activation email")
-def send_activation_email(request, user:CustomUser):
-    current_site = get_current_site(request)
-    subject = 'Activate Your Ecommerce App Account'
-    message = render_to_string('core/account_activation_email.html',
-    {
-        'user': user,
-        'domain': current_site.domain,
-        'uid': urlsafe_base64_encode(force_bytes(user.pk)),
-        'token': account_activation_token.make_token(user),
-    })
-    user.email_user(subject, message)
-    send_mail(subject=subject, message=message, from_email="donotreply@ecom.com", recipient_list=[user.email])
-
-@shared_task(name="update email")
-def send_update_notification(username, email):
-    subject = 'Profile Update Successful'
-    message = f'''
-Hello {username},
-Your Account Profile Has been updated.
-
-If you did not initiate this request, change your password immediately. 
-Also email support to inform us about it.
-'''
-    send_mail(subject=subject, message=message,from_email="donotreply@ecom.com", recipient_list=[email])
-
-
 
 
 # Create your views here.
@@ -125,7 +95,7 @@ class CustomerRegisterAPIView(APIView):
         if serializer.is_valid():
             #print(serializer.validated_data, serializer.data) #to view the validated data object/dict
             user = serializer.save()
-            send_activation_email(request, user)
+            send_activation_email.delay(request, user)
             return Response({"message":"User Registered Successfully. Activation Email Sent", 
                              "data":serializer.data}, HTTP_201_CREATED)
         return Response(serializer.errors, HTTP_400_BAD_REQUEST)
@@ -150,7 +120,7 @@ class CustomerUpdateAPIView(APIView):#testing between using APIVIEW or genericvi
     )
 
     def get(self, request):
-        serializer = CustomerSerializer(instance=request.user)
+        serializer = CustomerSerializer(instance=request.user.customerprofile)
         return Response(serializer.data, HTTP_200_OK)
     
     def patch(self, request):
@@ -163,11 +133,34 @@ class CustomerUpdateAPIView(APIView):#testing between using APIVIEW or genericvi
         if serializer.is_valid():
             print(serializer.validated_data)
             serializer.save()
-            send_update_notification.delay(instance.username, instance.email)
+            #send_update_notification.delay(instance.username, instance.email)
             return Response(serializer.data, HTTP_200_OK)
         return Response(serializer.errors, HTTP_400_BAD_REQUEST)
 
+class CustomerRetrieveView(APIView):
+    """
+    Customer Retrieve route view for getting a customer profile
+    Buyers/Vendors alike
+    """
+    def get(self, request, username):
+        instance = get_object_or_404(CustomerProfile, user__username=username)
+        serializer = CustomerSerializer(instance=instance)
+        return Response(serializer.data, HTTP_200_OK)
 
+
+class CustomerListView(ListAPIView):
+    """
+    Customer List routes view for listing all customers
+    Buyers/Vendors alike
+    """
+    serializer_class = CustomerSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ["user_type"]
+    #paginator = []
+    
+    def get_queryset(self):
+        queryset = CustomerProfile.objects.filter(user__email_verified=True)
+        return queryset
 
 class EmployeerAPIView(APIView):
     """
@@ -191,7 +184,7 @@ class EmployeerAPIView(APIView):
         serializer = EmployeeRegisterSerializer(data = request.data)
         if serializer.is_valid() and request.user.is_staff:#only staffs can register staff
             #print(serializer.validated_data, serializer.data) #to view the validated data object/dict
-            #serializer.save()
+            serializer.save()
             return Response({"message":"Employee User Registered Successfully", 
                              "data":serializer.data}, HTTP_201_CREATED)
         return Response(serializer.errors, HTTP_400_BAD_REQUEST)
@@ -207,7 +200,7 @@ class EmployeerAPIView(APIView):
                                              partial= True)
         try:
             if instance.is_staff==False and instance.employeeprofile:
-                return Response({"error":"NOT ALLOWED. Only Staff can update their details"},
+                return Response({"error":"NOT ALLOWED. Only Staff can update their details via dis link"},
                                     status=HTTP_403_FORBIDDEN)
         except:
             return Response({"error":"profile does not exist"}, HTTP_400_BAD_REQUEST)
@@ -229,7 +222,7 @@ class EmailVerificationView(APIView):
     def get(self, request):
         user = request.user
         if user.email_verified == False:
-            send_activation_email(request, user)#would wrap in try-except block to handle email sending errors
+            send_activation_email.delay(request, user)#would wrap in try-except block to handle email sending errors
             return Response({"message": "Verification Email Sent successfully"}, HTTP_200_OK)
         return Response({"message":"User's Email Has already been verified"}, HTTP_200_OK)
 
@@ -273,11 +266,27 @@ class CommentViewset(ListModelMixin, CreateModelMixin,
     for adding comments/ratings on vendors
     """
     serializer_class = CommentSerializer
+    parser_classes = [JSONParser, FormParser]
     permission_classes = (IsAuthenticated,)
-    filterset_fields = ["approved", "email", "rating"]
-    search_fields = ["email", "vendor__email", "item__id", "comment"]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ["email", "rating", "vendor__username", "item_id"]
+    search_fields = ["item__id", "comment"]
     ordering_fields = ["email", "date_created"]
     ordering = ["-date_created"]
+    queryset = Comment.objects.all()
 
-    def get_queryset(self):
-        return Comment.objects.filter(user=self.request.user)
+    def create(self, request, *args, **kwargs):
+        serializer = CommentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        if serializer.data.get("email") == request.user.email:
+        #prevent another user from commenting on another 
+            return super().create(request, *args, **kwargs)
+        return Response({'message':"Not Allowed. Commenter email and signed in users email must match", 
+                         "status":"Failed"}, status=HTTP_400_BAD_REQUEST)
+
+    def destroy(self, request, pk, *args, **kwargs):
+        obj = get_object_or_404(Comment, pk=pk)
+        if request.user.email == obj.email:
+            super().destroy(request, *args, **kwargs)
+            return Response({"message":"Message deleted successfully", "status":"success"})
+        return Response({"message":"comment can only be deleted by the creator/'commenter'."}, status=HTTP_403_FORBIDDEN)

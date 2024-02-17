@@ -1,10 +1,9 @@
 from django.contrib.auth.hashers import make_password
-
 from rest_framework.serializers import ModelSerializer  # CharField can be imported here too
 from rest_framework.exceptions import ValidationError
 from rest_framework.status import HTTP_400_BAD_REQUEST, HTTP_200_OK
 from rest_framework.fields import (
-    CharField, EmailField,  URLField, 
+    CharField, EmailField,  URLField, DecimalField
     ) #CharField should be imported here(directly)
 from rest_framework_json_api.serializers import PrimaryKeyRelatedField
 
@@ -72,10 +71,10 @@ class EmployeeRegisterSerializer(ModelSerializer):
     department = CharField(source="employeeprofile.department")
 
     def create(self, validated_data):
-        department = validated_data.pop("department", None)
+        profile = validated_data.pop("employeeprofile", None)
         validated_data["password"] = make_password(validated_data.get("password"))        
         user = CustomUser.objects.create(is_staff=True, **validated_data)
-        EmployeeProfile.objects.create(user=user, department= department)#if signals are used. then should be removed
+        EmployeeProfile.objects.create(user=user, **profile)#if signals are used. then should be removed
         #implement algorithm to send email on registeration
         return user
 
@@ -210,7 +209,7 @@ class CustomUserSerializer(ModelSerializer):
         model = CustomUser
         fields: tuple = (
             "username","email",
-            "gender","bio",
+            "gender","bio","avg_rating",
             "date_of_birth",
             "phone","address",
             "country","image",
@@ -251,22 +250,21 @@ class CommentSerializer(ModelSerializer):
     Serializer for comment viewset
     """
     vendor = PrimaryKeyRelatedField(queryset=CustomUser.objects.all())#might use select-related later
-    item = PrimaryKeyRelatedField(queryset=Item.objects.all())#might use select-related later
+    item = PrimaryKeyRelatedField(queryset=Item.objects.all(), required=False)#might use select-related later
 
     class Meta:
         model = Comment
-        field = ("name", "email", "comment", "rating", "item", "vendor")
+        fields = ("name", "email", "comment", "rating", "item", "vendor")
     
     def validate_rating(self, value):
         '''
         validates `comment.rating` field
         '''
-        value = float(value)
-        if value < 1 and value > 5:
-            raise ValidationError("Value must be between 1 and 5")
-        #implement algorithm for decimal places
+        print("validating rating", type(value))
+        if value < 1 or value > 5:
+            raise ValidationError("Rating Value must be between 1 and 5")
         return value
-    
+
     def validate(self, attrs:dict):
         '''
         validates the data sent to the serializer

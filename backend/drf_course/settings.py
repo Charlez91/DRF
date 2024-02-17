@@ -106,6 +106,30 @@ DATABASES = {
 }
 """
 
+#caching settings
+#redis cache backend
+"""
+CACHES = {
+    "default":{
+        "BACKEND":"django.core.cache.backends.redis.RedisCache",
+        "LOCATION": os.getenv("REDIS_URL", "redis://127.0.0.1:6379"),
+        "OPTIONS":{
+            "db": "10",
+            "parser_class":"redis.connection.PythonParser",
+            
+        }
+    }
+}
+"""
+
+#cache with mysql based db sqlite or postgres
+CACHES = {
+    "default":{
+        "BACKEND":"django.core.cache.backends.db.DatabaseCache",
+        "LOCATION":"my_cache_table",
+    }
+}
+
 # Email Settings (Development)
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
@@ -179,6 +203,7 @@ CELERY_TIMEZONE = "Africa/Lagos"
 CELERY_ACCEPT_CONTENT = ["application/json"]
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TASK_SERIALIZER = "json"
+CELERY_CACHE_BACKEND = "default"
 
 
 #rest framework settings
@@ -196,9 +221,9 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_METADATA_CLASS': 'rest_framework_json_api.metadata.JSONAPIMetadata',
     'DEFAULT_FILTER_BACKENDS': (
+        'django_filters.rest_framework.DjangoFilterBackend',
         'rest_framework_json_api.filters.QueryParameterValidationFilter',
         'rest_framework_json_api.filters.OrderingFilter',
-        'rest_framework_json_api.django_filters.DjangoFilterBackend',
         'rest_framework.filters.SearchFilter',
     ),
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
