@@ -5,6 +5,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import render, get_object_or_404
 from django.views.generic import View
 from django.contrib import messages
+from django.contrib.sites.shortcuts import get_current_site
 from django.utils.http import urlsafe_base64_decode
 from django.utils.encoding import force_str
 from rest_framework.status import (
@@ -19,6 +20,7 @@ from rest_framework.mixins import (
     CreateModelMixin, DestroyModelMixin,
     )
 from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiResponse
@@ -34,7 +36,8 @@ from .serializers import (ContactSerializer,
                           )
 from .models import Comment, CustomUser, CustomerProfile
 from .tasks import send_activation_email, send_update_notification
-from .token import account_activation_token
+from .core_utils.token import account_activation_token
+from utils.pagination import StandardResultsSetPagination
 
 
 # Create your views here.
@@ -44,8 +47,9 @@ class ContactAPIView(APIView):
     for creating contact entries
     '''
     serializer_class = ContactSerializer
-    #parser_classes = [JSONParser]
-    
+    throttle_classes = [ScopedRateThrottle,]
+    throttle_scope = "contact"
+
     def get_serializer_context(self):
         return {
             'request':self.request,
@@ -60,7 +64,7 @@ class ContactAPIView(APIView):
     def post(self, request):
         try:
             data = JSONParser().parse(request)
-            serializer = ContactSerializer(data=data)
+            serializer = self.get_serializer(data=data)
             if serializer.is_valid(raise_exception=True):
                 serializer.save()
                 #implement email sending algorithm here or in models or in serializer celery inclusive
@@ -77,7 +81,7 @@ class CustomerRegisterAPIView(APIView):
     Buyer/Vendor
     """
     parser_classes: list = [FormParser, JSONParser]
-    #serializer_class = UserRegisterSerializer #no need for this. serializer_class field/get_serializer method not in APIView parent class.
+    #serializer_class = CustomerRegisterSerializer #no need for this. serializer_class field/get_serializer method not in APIView parent class.
 
     @extend_schema(
         summary='Customer User Registration',
@@ -93,9 +97,9 @@ class CustomerRegisterAPIView(APIView):
         #user_serializer = CustomUserSerializer(data=request.data)
         serializer = CustomerRegisterSerializer(data = request.data)
         if serializer.is_valid():
-            #print(serializer.validated_data, serializer.data) #to view the validated data object/dict
             user = serializer.save()
-            send_activation_email.delay(request, user)
+            current_site = get_current_site(request)
+            send_activation_email.delay(current_site, user)
             return Response({"message":"User Registered Successfully. Activation Email Sent", 
                              "data":serializer.data}, HTTP_201_CREATED)
         return Response(serializer.errors, HTTP_400_BAD_REQUEST)
@@ -107,6 +111,8 @@ class CustomerUpdateAPIView(APIView):#testing between using APIVIEW or genericvi
     """
     parser_classes: list = [MultiPartParser, FormParser, JSONParser]
     permission_classes = (IsAuthenticated,)
+    throttle_classes = (ScopedRateThrottle,)#will review and maybe refactor cos of the get method which might receive more calls than a patch
+    throttle_scope = "profile"
     #serializer_class = UserRegisterSerializer #no need for this. serializer_class field/get_serializer method not in APIView parent class.
 
     @extend_schema(
@@ -156,10 +162,10 @@ class CustomerListView(ListAPIView):
     serializer_class = CustomerSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ["user_type"]
-    #paginator = []
+    pagination_class = StandardResultsSetPagination
     
     def get_queryset(self):
-        queryset = CustomerProfile.objects.filter(user__email_verified=True)
+        queryset = CustomerProfile.objects.filter(user__email_verified=True).all()
         return queryset
 
 class EmployeerAPIView(APIView):
@@ -222,7 +228,8 @@ class EmailVerificationView(APIView):
     def get(self, request):
         user = request.user
         if user.email_verified == False:
-            send_activation_email.delay(request, user)#would wrap in try-except block to handle email sending errors
+            current_site = get_current_site(request)#refactored because of the difficulty in serializer the user object to celery task decorated functions
+            send_activation_email(current_site, user)#would wrap in try-except block to handle email sending errors
             return Response({"message": "Verification Email Sent successfully"}, HTTP_200_OK)
         return Response({"message":"User's Email Has already been verified"}, HTTP_200_OK)
 

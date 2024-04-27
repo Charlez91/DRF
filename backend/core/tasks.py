@@ -1,3 +1,5 @@
+import os
+
 from celery import shared_task
 from django.contrib.sites.shortcuts import get_current_site
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
@@ -6,12 +8,10 @@ from django.utils.encoding import force_bytes
 from django.core.mail import send_mail
 from PIL import Image
 
-from .token import account_activation_token
+from .core_utils.token import account_activation_token
 
 
-@shared_task(name="activation email")
-def send_activation_email(request, user):
-    current_site = get_current_site(request)
+def send_activation_email(current_site, user):
     subject = 'Activate Your Ecommerce App Account'
     message = render_to_string('core/account_activation_email.html',
     {
@@ -20,8 +20,12 @@ def send_activation_email(request, user):
         'uid': urlsafe_base64_encode(force_bytes(user.pk)),
         'token': account_activation_token.make_token(user),
     })
-    user.email_user(subject, message)
-    send_mail(subject=subject, message=message, from_email="donotreply@ecom.com", recipient_list=[user.email])
+    send_activate_email.delay(subject, message, user.email)
+
+@shared_task(name="activation email")
+def send_activate_email(subject, message, email):
+    #user.email_user(subject, message)
+    send_mail(subject=subject, message=message, from_email="donotreply@ecom.com", recipient_list=[email])
 
 
 @shared_task(name="update email")
@@ -49,3 +53,13 @@ def process_user_image(imagepath)->None:
         output_size = (150, 150)  # 125,125 was used in flask example though
         img.thumbnail(output_size)
         img.save(imagepath)
+
+@shared_task(name="delete previous image")
+def del_prev_image(imagepath):
+    #remove old file
+    print("deleting image")
+    try:
+        os.remove(imagepath)
+        return "Success"#will remove later
+    except FileNotFoundError:
+        print("file not found")#will replace with log

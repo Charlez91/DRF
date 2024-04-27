@@ -10,8 +10,9 @@ from rest_framework.status import (
 )
 from rest_framework.authtoken.models import Token
 
-from .models import Item, Order
+from .models import Item, Order, OrderItem
 from .serializers import NotEnoughStockException
+from core.models import CustomUser
 
 # Create your tests here.
 class EcommerceTestCase(APITestCase):
@@ -38,19 +39,24 @@ class EcommerceTestCase(APITestCase):
                             price= 500,stock= 30)
         self.items = Item.objects.all()
         #creating users
-        self.user = User.objects.create_user(
+        self.user = CustomUser.objects.create_user(
             username="Charlez91",
             password="testing123",
             email="okekecharles91@gmail.com"
         )
         #creating orders
-        Order.objects.create(item = Item.objects.first(),
+        order1 = Order.objects.create(
                              user = self.user, quantity = 1)
-        Order.objects.create(item = Item.objects.first(),
-                             user = User.objects.first(), quantity = 2)
-        Order.objects.create(item = Item.objects.last(), 
-                             user = User.objects.first(), quantity = 2)
+        order2 = Order.objects.create(#item = Item.objects.first(),
+                             user = CustomUser.objects.first(), quantity = 2)
+        order3 = Order.objects.create(#item = Item.objects.last(), 
+                             user = CustomUser.objects.first(), quantity = 2)
         self.orders = Order.objects.all()
+        #adding to OrderItem Table
+        OrderItem.objects.create(order=order1, item=Item.objects.first(), quantity=1)
+        OrderItem.objects.create(order = order2, item = Item.objects.first(), quantity=1)
+        OrderItem.objects.create(order = order2, item = Item.objects.last(), quantity=1)
+        OrderItem.objects.create(order = order3, item = Item.objects.last(), quantity=2)
         #the app uses Token Authentication
         self.token = Token.objects.get(user = self.user)
         self.client = APIClient()
@@ -62,7 +68,7 @@ class EcommerceTestCase(APITestCase):
         test ItemsViewSet list method
         '''
         self.assertEqual(Item.objects.count(), len(self.items), "Numbers of items in db dont match")
-        response = self.client.get('/item/')
+        response = self.client.get('/api/v1/item/')
         self.assertEqual(response.status_code, HTTP_200_OK)
     
     def test_get_one_item(self):
@@ -70,7 +76,7 @@ class EcommerceTestCase(APITestCase):
         test ItemsViewSet retrieve method
         '''
         for item in self.items:
-            response = self.client.get(f'/item/{item.id}/')
+            response = self.client.get(f'/api/v1/item/{item.id}/')
             self.assertEqual(response.status_code, HTTP_200_OK)
     
     def test_order_is_more_than_stock(self):
@@ -104,7 +110,7 @@ class EcommerceTestCase(APITestCase):
         for i in self.items:
             stock = i.stock
             data = {"item":str(i.id), "quantity":f'{stock+1}'}
-            response = self.client.post('/order/', data)
+            response = self.client.post('/api/v1/order/', data)
             self.assertEqual(response.status_code, HTTP_400_BAD_REQUEST, 'order.quantity<=item.stock')
             self.assertRaises(NotEnoughStockException)
     
@@ -114,7 +120,7 @@ class EcommerceTestCase(APITestCase):
         '''
         for i in self.items:
             data = {"item":str(i.id), "quantity":1}
-            response = self.client.post('/order/', data)
+            response = self.client.post('/api/v1/order/', data)
             self.assertEqual(response.status_code, HTTP_200_OK, 'order.quantity>item.stock')
 
     def test_create_order_with_equal_stock(self):
@@ -124,7 +130,7 @@ class EcommerceTestCase(APITestCase):
         for i in self.items:
             stock = i.stock
             data = {"item":str(i.id), "quantity":f'{stock}'}
-            response = self.client.post('/order/', data)
+            response = self.client.post('/api/v1/order/', data)
             self.assertEqual(response.status_code, HTTP_200_OK, 'order.quantity>item.stock')
 
     def test_create_order_with_item_that_doesnt_exist(self):
@@ -133,7 +139,7 @@ class EcommerceTestCase(APITestCase):
         '''
         i = Item.objects.last()
         data = {"item":str(uuid4()), "quantity":1} # uses uuid so hopefuly an id +1 doesnt exist. can change to more strange stuff later
-        response = self.client.post('/order/', data)
+        response = self.client.post('/api/v1/order/', data)
         self.assertEqual(response.status_code, HTTP_404_NOT_FOUND, "Item exists")
 
     def test_get_all_orders(self):
@@ -141,7 +147,7 @@ class EcommerceTestCase(APITestCase):
         test OrdersViewSet list method
         '''
         self.assertEqual(Order.objects.count(), len(self.orders), 'Orders are tallying')
-        response = self.client.get('/order/')
+        response = self.client.get('/api/v1/order/')
         self.assertEqual(response.status_code, HTTP_200_OK)
 
     def test_get_one_order(self):
@@ -150,5 +156,5 @@ class EcommerceTestCase(APITestCase):
         '''
         orders = Order.objects.filter(user = self.user)
         for o in orders:
-            response = self.client.get(f'/order/{o.id}/')
+            response = self.client.get(f'/api/v1/order/{o.id}/')
             self.assertEqual(response.status_code, HTTP_200_OK)

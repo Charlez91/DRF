@@ -1,3 +1,6 @@
+import os
+from random import randint
+
 from django.db import models
 from django.conf import settings
 from django.core.validators import MinValueValidator
@@ -8,10 +11,10 @@ from django_extensions.db.models import (
     TitleSlugDescriptionModel,
     AutoSlugField
 )
-from PIL import Image
 
 #from core.models import CustomUser
 from utils.model_abstracts import Model
+from .tasks import process_item_image
 
 """
 #image class for item images incases of multiple images for an item
@@ -20,24 +23,6 @@ class Image(models.Model):
     img = image = models.ImageField(default="default.jpg", upload_to="item_images")
     thumbnail = models.ImageField(default="default.jpg", upload_to="item_thumbnails")#still thinking of making optional
 """
-
-def process_item_image(instance)->None:
-    """
-    to process thumbnail and images
-    """
-    #open image and makes a copy
-    img = Image.open(instance.image.path)
-    img_thumbnail = Image.Image.copy(img)
-    #logic to resize image and save to image path
-    if img.height > 300 or img.width > 300:
-        output_size = (300,300)
-        img = img.resize(output_size)
-        img.save(instance.image.path)
-    #logic to resize thumbnail and save to image path
-    if img_thumbnail.height > 125 or img_thumbnail.width > 125:
-        img_thumbnail.thumbnail((125,125))
-        img.save(instance.thumbnail.path)
-
 
 class Category( models.Model):
     """
@@ -51,12 +36,6 @@ class Category( models.Model):
 
     def __str__(self) -> str:
         return self.name
-    
-    def get_comments(self):
-        '''
-        Gets all comments/ratings on items
-        '''
-        return self.comment.filter(active=True)
     
     def get_sub_categories(self):
         '''
@@ -96,7 +75,24 @@ class Currency(models.Model):
 
     def __str__(self) -> str:
         return self.name
-    
+
+
+def get_filename_ext(filepath):
+    base_name = os.path.basename(filepath)
+    name, ext = os.path.splitext(base_name)
+    return name, ext
+
+def upload_image_path(instance, filename):
+    new_filename = randint(1,3910209312)
+    _, ext = get_filename_ext(filename)
+    final_filename = f'{new_filename}{ext}'
+    return "item_images/{final_filename}".format(final_filename=final_filename)
+
+def upload_thumbnail_path(instance, filename):
+    new_filename = randint(1,3910209312)
+    _, ext = get_filename_ext(filename)
+    final_filename = f'{new_filename}{ext}'
+    return "item_thumbnails/{final_filename}".format(final_filename=final_filename)
 
 # Create your models here.
 class Item(TimeStampedModel, ActivatorModel, TitleSlugDescriptionModel, Model):
@@ -110,8 +106,8 @@ class Item(TimeStampedModel, ActivatorModel, TitleSlugDescriptionModel, Model):
     currency = models.ForeignKey(Currency, on_delete= models.CASCADE, null=True, blank=True)
     stock = models.PositiveIntegerField(default=1)#number in stock/inventory
     price = models.IntegerField(default=0) # normally should be a float field but price here is actually in pence, cents, kobo
-    image = models.ImageField(default="default.jpg", upload_to="item_images")# will later make a one to many/many to many relationship cos an item might have multiple images and images can be shared too btw items
-    thumbnail = models.ImageField(default="default.jpg", upload_to="item_thumbnails")
+    image = models.ImageField(default="default.jpg", upload_to=upload_image_path)# will later make a one to many/many to many relationship cos an item might have multiple images and images can be shared too btw items
+    thumbnail = models.ImageField(default="default.jpg", upload_to=upload_thumbnail_path)
     weight = models.DecimalField(max_digits = 10, decimal_places=3, default=0)#in kg
     specifications = models.JSONField(null=True, blank=True)
     colors = models.ManyToManyField(Color, related_name='items')
@@ -120,7 +116,16 @@ class Item(TimeStampedModel, ActivatorModel, TitleSlugDescriptionModel, Model):
         return self.title
     
     def process_image(self):
-        process_item_image(self)
+        '''
+        Resizes item and thumbnail images
+        '''
+        process_item_image.delay(self.image.path, self.thumbnail.path)#i feel item images shouldnt be resized at all
+    
+    def get_comments(self):
+        '''
+        Gets all comments/ratings on items
+        '''
+        return self.comment.filter(approved=True).filter(deleted=False)
     
     def save(self, *args, **kwargs) -> None:
         '''
@@ -128,7 +133,6 @@ class Item(TimeStampedModel, ActivatorModel, TitleSlugDescriptionModel, Model):
         '''
         super().save(*args, **kwargs)
         #process_item_image(self)#dis adds computational overhead to save 
-        
         
     @property
     def amount(self) -> float:

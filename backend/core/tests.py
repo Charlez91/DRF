@@ -16,7 +16,7 @@ class ContactTestCase(APITestCase):
             "email": "okekecharles91@gmail.com",
             "message": "This is a test message"
         }
-        self.url = "/contact/"
+        self.url = "/api/v1/contact/"
     
     def test_create_contact(self):
         '''

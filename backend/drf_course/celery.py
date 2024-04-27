@@ -15,3 +15,8 @@ app.config_from_object('django.conf:settings', namespace='CELERY')
 
 # Load task modules from all registered Django app configs.
 app.autodiscover_tasks()
+
+#was added in the official celery documentation. dnt feel its important though.
+@app.task(bind=True, ignore_result=True)
+def debug_task(self):
+    print(f'Request: {self.request!r}')

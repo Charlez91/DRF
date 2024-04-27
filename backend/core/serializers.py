@@ -3,12 +3,13 @@ from rest_framework.serializers import ModelSerializer  # CharField can be impor
 from rest_framework.exceptions import ValidationError
 from rest_framework.status import HTTP_400_BAD_REQUEST, HTTP_200_OK
 from rest_framework.fields import (
-    CharField, EmailField,  URLField, DecimalField
+    CharField, EmailField,  URLField,
     ) #CharField should be imported here(directly)
 from rest_framework_json_api.serializers import PrimaryKeyRelatedField
 
 from .models import (Contact, CustomUser, 
                      CustomerProfile, EmployeeProfile, Comment)
+from .tasks import del_prev_image
 from ecommerce.models import Item
 
 
@@ -111,17 +112,21 @@ class CustomerUpdateSerializer(ModelSerializer):
         store_url = profile_data.pop("store_url", profile.store_url)
 
         #user instance update
+        old_image = instance.image
         if validated_data.get("password") != None:
             instance.set_password(validated_data["password"])
         instance.first_name = validated_data.get("first_name", instance.first_name)
         instance.last_name = validated_data.get("last_name", instance.last_name)
         instance.address = validated_data.get("address", instance.address)
-        instance.image = validated_data.get("image", instance.image)
+        instance.image = validated_data.get("image", instance.image)#might introduce a way of hashing old images and comparing with new ones to know when a new image is uploaded
         instance.bio = validated_data.get("bio")
         instance.phone = validated_data.get("phone")
         instance.save()
         if validated_data.get("image") is not None:
             instance.process_image()
+            print("old image",old_image, "path", old_image.path)
+            if "default"  not in old_image:
+                del_prev_image.delay(old_image.path)
         #implement algorithm for sending email on instance update
 
         #profile update

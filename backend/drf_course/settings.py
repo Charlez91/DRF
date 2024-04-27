@@ -43,10 +43,10 @@ INSTALLED_APPS = [
     "django_filters",# used with DRF
     "rest_framework",# DRF itself
     "rest_framework.authtoken",# used to enable tokens
-    "drf_spectacular",
-    "corsheaders",
-    "core",#core app for contact
-    "ecommerce",# ecommerce app for orders and items
+    "drf_spectacular",#openapi/swagger doc integration
+    "corsheaders",#to allow cors across origins
+    "core",#core app for contact and user and comments
+    "ecommerce",# ecommerce app for orders, items, transactions and categories
     "django_celery_results",
 ]
 
@@ -200,10 +200,10 @@ CORS_ALLOW_CREDENTIALS = True
 CELERY_RESULT_BACKEND = os.getenv('RESULT_BACKEND', "django-db")
 CELERY_BROKER_URL = os.getenv('REDIS_URL' ,'redis://127.0.0.1:6379')
 CELERY_TIMEZONE = "Africa/Lagos"
-CELERY_ACCEPT_CONTENT = ["application/json"]
-CELERY_RESULT_SERIALIZER = "json"
-CELERY_TASK_SERIALIZER = "json"
-CELERY_CACHE_BACKEND = "default"
+#CELERY_ACCEPT_CONTENT = ["application/json"]
+#CELERY_RESULT_SERIALIZER = "json"
+#CELERY_TASK_SERIALIZER = "json"
+CELERY_CACHE_BACKEND = "default"#the apps cache default settings
 
 
 #rest framework settings
@@ -216,9 +216,25 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.TokenAuthentication',
     ],
     'DEFAULT_RENDERER_CLASSES': (
+        'rest_framework.renderers.JSONRenderer',#the data response interferes with some response objects data like pagination data
         'rest_framework_json_api.renderers.JSONRenderer',
         'rest_framework.renderers.BrowsableAPIRenderer'
     ),
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 3,
+    "DEFAULT_THROTTLE_CLASSES":(
+        "drf_course.throttles.throttle.UserBurstRateThrottle",
+        "drf_course.throttles.throttle.UserSustainedRateThrottle",
+        "rest_framework.throttling.AnonRateThrottle",
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'anon':"200/day",
+        'burst': '10/min',
+        'sustained': '1000/day',
+        "profile":"10/day",
+        "contact":"10/day",
+        "staff":"50/day"
+    },
     'DEFAULT_METADATA_CLASS': 'rest_framework_json_api.metadata.JSONAPIMetadata',
     'DEFAULT_FILTER_BACKENDS': (
         'django_filters.rest_framework.DjangoFilterBackend',

@@ -10,8 +10,6 @@ from django_extensions.db.models import (
     TimeStampedModel,
     ActivatorModel,
     TitleDescriptionModel)
-from PIL import Image
-from celery import shared_task
 
 from .tasks import process_user_image
 from utils.model_abstracts import Model
@@ -44,7 +42,7 @@ def get_filename_ext(filepath):
     name, ext = os.path.splitext(base_name)
     return name, ext
 
-def upload_image_path(instance, filename):
+def upload_image_path(instance, filename)->str:
     new_filename = randint(1,3910209312)
     _, ext = get_filename_ext(filename)
     final_filename = f'{new_filename}{ext}'
@@ -70,8 +68,9 @@ class CustomUser(AbstractUser):
     def __str__(self) -> str:
             return f"{self.username}"
     
-    def process_image(self)->None:
+    def process_image(self)->str:
         process_user_image.delay(self.image.path)
+        return "done"
     
     def get_comments(self):
         '''
@@ -122,7 +121,7 @@ class Comment(models.Model):
     objects = CommentManager()
 
 
-    def save_avg_rating(self):
+    def save_user_avg_rating(self):
         total = int(Comment.objects.filter(vendor=self.vendor).count())
         old_avg_rating = self.vendor.avg_rating
         current_rating = self.rating
@@ -132,7 +131,7 @@ class Comment(models.Model):
         self.vendor.avg_rating = round(new_avg_rating, 2)#implement algorithm to make it rounded off to 2dp
         self.vendor.save()
 
-    def del_avg_rating(self):
+    def del_user_avg_rating(self):
         old_avg_rating = self.vendor.avg_rating
         current_rating = self.rating
         total = int(Comment.objects.filter(vendor=self.vendor).count()+1)
@@ -144,17 +143,16 @@ class Comment(models.Model):
     def save(self, *args, op=None,**kwargs) -> None:
         print("saving")
         super().save(*args, **kwargs)
-        #might need to seperate this logic
-        if op == None:
-            self.save_avg_rating()
+        self.save_user_avg_rating()#updates average rating
 
-    def delete(self, *args, **kwargs) -> tuple[int, dict[str, int]]:
+    def delete(self, *args, **kwargs) -> None:
         print("deleting")
         self.deleted = True
-        self.save(op="Delete")
+        #self.save(op="Delete")#no need for this again
+        super().save(*args, **kwargs)#we can call save method of the parent class directly
         #REMEMBER to update algorithm incase of delete of comment/rating
-        self.del_avg_rating()
-        #return super().delete(*args, **kwargs)
+        self.del_user_avg_rating()
+        #return super().delete(*args, **kwargs)#no need for this since we implementing soft delete
 
     def __str__(self):
         return f"{self.email} Comment"
@@ -191,4 +189,9 @@ class CustomerProfile(models.Model):
 
     def __str__(self) -> str:
             return f"{self.user.username} Customer Profile"
+    
+    class Meta:
+        verbose_name = "CustomerProfile"
+        verbose_name_plural = "CustomerProfiles"
+        ordering = ["id"]
 
