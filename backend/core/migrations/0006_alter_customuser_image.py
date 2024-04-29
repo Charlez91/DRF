@@ -15,7 +15,7 @@ class Migration(migrations.Migration):
             model_name="customuser",
             name="image",
             field=models.ImageField(
-                default="default.jpg", upload_to=core.models.upload_image_path
+                default="default.jpg", upload_to=core.models.user_models.customuser_models.upload_image_path
             ),
         ),
     ]
